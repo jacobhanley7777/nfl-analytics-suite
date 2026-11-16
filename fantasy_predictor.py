@@ -167,7 +167,7 @@ def ensure_engine_initialized():
     STATE['gsis_to_bio'] = gsis_to_bio
     gc.collect()
 
-   cache_loaded = False
+            cache_loaded = False
     if os.path.exists(CACHE_PATH):
         try:
             with open(CACHE_PATH, "rb") as f:
