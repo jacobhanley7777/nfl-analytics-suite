@@ -830,9 +830,8 @@ def initialize_dashboard():
         gr.update(choices=eval_choices, value=eval_choices[0]), acc_md, acc_df
     )
 
-sleek_theme = gr.themes.Soft(primary_hue="blue", secondary_hue="slate", neutral_hue="slate", font=[gr.themes.GoogleFont("Inter"), "ui-sans-serif", "system-ui", "-apple-system", "sans-serif"])
 
-with gr.Blocks(theme=sleek_theme, title="NFL Quantitative Scouting, League & Props Suite") as demo:
+with gr.Blocks(theme="soft", title="NFL Quantitative Scouting, League & Props Suite") as demo:
     gr.Markdown("# NFL Quantitative Scouting, League Intelligence & Player Props Suite (2026)")
     with gr.Tabs():
         with gr.TabItem("1. Player Projections & Scouting"):
