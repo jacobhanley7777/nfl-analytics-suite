@@ -211,6 +211,15 @@ def ensure_engine_initialized():
                     f_out.write(r_dl.content)
         except Exception as e:
             print(f"Release cache download notice: {e}")
+            if not os.path.exists(CACHE_PATH):
+    try:
+        rel_url = "https://github.com/jacobhanley7777/nfl-analytics-suite/releases/download/v1.0/model_cache.pkl"
+        r_dl = requests.get(rel_url, timeout=30)
+        if r_dl.status_code == 200:
+            with open(CACHE_PATH, "wb") as f_out:
+                f_out.write(r_dl.content)
+    except Exception as e:
+        print(f"Release cache download notice: {e}")
     # 3. Load Repository Model Cache (or train if not found)
     cache_loaded = False
     if os.path.exists(CACHE_PATH):
