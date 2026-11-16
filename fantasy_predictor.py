@@ -1098,7 +1098,7 @@ sleek_theme = gr.themes.Soft(
     font=[gr.themes.GoogleFont("Inter"), "ui-sans-serif", "system-ui", "-apple-system", "sans-serif"]
 )
 
-with gr.Blocks(theme=sleek_theme, title="NFL Quantitative Scouting, League & Props Suite") as demo:
+with gr.Blocks(title="NFL Quantitative Scouting, League & Props Suite") as demo:
     gr.Markdown("# NFL Quantitative Scouting, League Intelligence & Player Props Suite (2026)")
 
     with gr.Tabs():
