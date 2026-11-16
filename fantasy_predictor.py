@@ -15,28 +15,8 @@ COL_MODEL = "Model's Projection"
 COL_SLEEPER = "Sleeper's Projection"
 COL_DIFF = "Diff (Model - Sleeper)"
 
-CACHE_PATH = os.path.expanduser("~/.fantasy_suite_2026_v9_props_cache.pkl")
+CACHE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "model_cache.pkl")
 PLAYERS_CACHE_PATH = os.path.expanduser("~/.sleeper_players_2026_cache.pkl")
-LOCAL_LEAGUE_ID_FILE = os.path.expanduser("~/.last_sleeper_league_id.txt")
-
-def load_saved_league_id():
-    if os.path.exists(LOCAL_LEAGUE_ID_FILE):
-        try:
-            with open(LOCAL_LEAGUE_ID_FILE, "r") as f:
-                return f.read().strip()
-        except Exception:
-            return ""
-    return ""
-
-def save_local_league_id(lid):
-    lid = str(lid or "").strip()
-    if lid and lid.isdigit():
-        try:
-            with open(LOCAL_LEAGUE_ID_FILE, "w") as f:
-                f.write(lid)
-        except Exception:
-            pass
-
 DEFAULT_LEAGUE_ID = ""
 
 NICKNAME_MAP = {
@@ -199,7 +179,7 @@ if os.path.exists(CACHE_PATH):
     try:
         with open(CACHE_PATH, "rb") as f:
             cached_bundle = pickle.load(f)
-        if cached_bundle.get('data_sig') == current_data_sig and cached_bundle.get('version') == 'v9_props':
+        if cached_bundle.get('version') == 'v9_props':
             df = cached_bundle['df']
             latest_dvp = cached_bundle['latest_dvp']
             model_mean = cached_bundle['model_mean']
@@ -213,7 +193,7 @@ if os.path.exists(CACHE_PATH):
             team_col = cached_bundle['team_col']
             opp_col = cached_bundle['opp_col']
             cache_loaded = True
-            print(f"4/6: Loaded Pre-Trained Fantasy + Player Prop Models from Local Cache ({current_data_sig[1]} rows through Week {current_data_sig[0]})...")
+            print("4/6: Loaded Pre-Trained Fantasy + Player Prop Models from Repository Cache (Instant Boot)...")
     except Exception:
         cache_loaded = False
 
@@ -386,7 +366,6 @@ if not cache_loaded:
     )
     model_boom.fit(X_train, y_train)
 
-    # Train Dedicated Multi-Target Player Prop Models (Conditional Median + Mean Blend for Sportsbook Prop Accuracy)
     prop_models = {}
     for prop_key, target_col in [
         ('pass_yd', 'passing_yards'),
@@ -820,7 +799,6 @@ def build_week_projections(target_week, force_refresh=False, ml_weight_override=
         np.clip(wk_df['season_healthy_ppg'] + 0.15 * wk_df['Playoff SoS'], 0.0, None)
     ).round(2)
 
-    # Compute Raw Player Stat Prop Projections (Passing Yards, Rushing Yards, Receiving Yards, Receptions, Anytime TD %)
     active_mask = ~(wk_df['is_bye'] | wk_df['is_out'])
     for p_key, roll_col, s_col, dvp_scale in [
         ('pass_yd', 'roll3_pass_yds', 's_pyds', 4.5),
@@ -833,7 +811,6 @@ def build_week_projections(target_week, force_refresh=False, ml_weight_override=
         hist_base = 0.55 * wk_df[roll_col] + 0.45 * wk_df[s_col] + wk_df['matchup_boost'] * dvp_scale
         pure_stat = np.clip(0.68 * raw_p + 0.32 * hist_base, 0.0, None)
         
-        # Pull market consensus prop line from Sleeper stat projections (or historical baseline if unavailable)
         mkt_lines = []
         for idx, r in wk_df.iterrows():
             if not active_mask.iloc[idx]:
@@ -843,7 +820,6 @@ def build_week_projections(target_week, force_refresh=False, ml_weight_override=
             m_val = s_dict.get(p_key, 0.0)
             if m_val <= 0.0:
                 m_val = max(0.0, round(hist_base.iloc[idx], 1))
-            # Round to nearest .5 sportsbook hook (e.g. 54.5, 62.5)
             hook_line = math.floor(m_val) + 0.5 if m_val >= 1.0 else 0.0
             mkt_lines.append(hook_line)
         wk_df[f'Mkt_{p_key}'] = mkt_lines
@@ -851,7 +827,6 @@ def build_week_projections(target_week, force_refresh=False, ml_weight_override=
         blended_stat = np.where(wk_df[f'Mkt_{p_key}'] > 0, 0.64 * pure_stat + 0.36 * wk_df[f'Mkt_{p_key}'], pure_stat)
         wk_df[f'Proj_{p_key}'] = np.where(active_mask, np.clip(blended_stat, 0.0, None), 0.0).round(1)
         
-    # Anytime TD Probability (Poisson arrival rate lambda -> 1 - exp(-lambda))
     _, m_td = prop_models['any_td']
     raw_td_lambda = np.clip(0.65 * m_td.predict(X_wk) + 0.35 * (wk_df['roll3_td_equity'] * 0.85 + np.maximum(0.0, wk_df['team_implied'] - 20.0) * 0.03), 0.02, 1.85)
     td_prob_pct = np.where(active_mask & (wk_df['Pos'].isin(['RB', 'WR', 'TE'])), (1.0 - np.exp(-raw_td_lambda)) * 100.0, 0.0).round(1)
@@ -964,7 +939,6 @@ except Exception:
     OPTIMAL_ML_WEIGHT = 0.60
 
 def fetch_live_dk_fd_props(odds_api_key):
-    """Optional integration with The Odds API to pull live FanDuel & DraftKings NFL player props."""
     if not odds_api_key or not str(odds_api_key).strip():
         return {}, "Using Sleeper / Market Consensus Prop Lines (Paste a free key from the-odds-api.com above to overlay live DraftKings & FanDuel lines)."
     key = str(odds_api_key).strip()
@@ -1049,7 +1023,6 @@ def build_player_props_board(week_num, prop_category, pos_filter, min_edge_filte
                 continue
                 
             diff_stat = round(mod_stat - line_val, 1)
-            # Scale dispersion slightly with projection magnitude
             sigma = max(base_sigma * 0.65, base_sigma * (0.55 + 0.45 * (max(line_val, mod_stat) / (min_line * 2.5))))
             p_over = (1.0 - normal_cdf((line_val - mod_stat) / sigma)) * 100.0
             p_under = 100.0 - p_over
@@ -1740,7 +1713,6 @@ def analyze_sleeper_league(league_id, week_num):
         return prompt_msg, pd.DataFrame(columns=pr_cols), "", pd.DataFrame(columns=matchup_cols), pd.DataFrame(columns=ss_cols), pd.DataFrame(columns=waiver_cols), pd.DataFrame(columns=tr_cols), empty_u, empty_u, gr.update(visible=False), "", pd.DataFrame(), empty_u, empty_u
         
     league_id = str(league_id).strip()
-    # save_local_league_id(league_id)
     headers = {'User-Agent': 'Mozilla/5.0'}
     
     try:
@@ -2396,8 +2368,8 @@ def analyze_sleeper_league(league_id, week_num):
     }
     
     mgr_names = [r['Manager'] for _, r in pr_df.iterrows()]
-    default_mgr = next((m for m in mgr_names if 'jacob' in m.lower()), mgr_names[0] if mgr_names else None)
-    second_mgr = next((m for m in mgr_names if m != default_mgr), default_mgr)
+    default_mgr = mgr_names[0] if mgr_names else None
+    second_mgr = mgr_names[1] if len(mgr_names) > 1 else default_mgr
     vis_update, audit_html, r_df = format_manager_deep_dive(league_id, wk_int, default_mgr)
     
     summary_text = (
@@ -2518,7 +2490,7 @@ methodology_text = """
 ## Complete Quantitative Methodology & Mathematical Whitepaper
 
 ### 1. Data Ingestion & Real-Time Synchronization Architecture
-The projection engine ingests three seasons of play-by-play aggregated player logs (`2024`, `2025`, and live `2026` weekly releases) from `nflverse`, cross-referenced with official NFL schedule telemetry (`schedules/games.csv`) and live Sleeper API endpoints (`/v1/players/nfl`, `/projections/nfl/2026/{week}`, `/v1/league/{id}/matchups/{week}`). Our local cache validator tracks both the **maximum completed week** and the **exact player-game row count** (`(max_week, len(df_2026))`), ensuring that Thursday, Sunday, and Monday Night Football stat releases automatically trigger model retraining while live injury tags, in-game points, and rosters sync in real time.
+The projection engine ingests three seasons of play-by-play aggregated player logs (`2024`, `2025`, and live `2026` weekly releases) from `nflverse`, cross-referenced with official NFL schedule telemetry (`schedules/games.csv`) and live Sleeper API endpoints (`/v1/players/nfl`, `/projections/nfl/2026/{week}`, `/v1/league/{id}/matchups/{week}`).
 
 ---
 
@@ -2535,12 +2507,12 @@ Standard box-score projections suffer from severe touchdown variance lag. Our fe
 ### 3. Three-Model GBDT Ensemble & Multi-Target Player Prop Engine
 We train five `HistGradientBoostingRegressor` models for PPR scoring plus five dedicated **Player Prop Models** (`Passing Yards`, `Rushing Yards`, `Receiving Yards`, `Receptions`, and `Anytime TD %`):
 1. **Conditional Mean (`loss='squared_error'`) + MAE Optimizer (`loss='absolute_error'`) + Conditional Median (`quantile=0.50`):** Prevents right-tail outlier distortion and minimizes out-of-sample Mean Absolute Error.
-2. **Sportsbook Prop Over/Under Probability & $+EV\%$:** Because sportsbooks price Over/Under lines at the **median ($Q_{0.50}$)**, our Conditional Median prop models directly estimate $P(\text{Over}) = 1 - \Phi((\text{Line} - \mu_{0.50}) / \sigma)$ and compute **Expected Value ($+EV\%$)** against standard `-110` vig (`52.38%` implied break-even) or live DraftKings/FanDuel prices.
+2. **Sportsbook Prop Over/Under Probability & $+EV\%$:** Because sportsbooks price Over/Under lines at the **median**, our Conditional Median prop models directly estimate $P(\text{Over})$ and compute **Expected Value ($+EV\%$)** against standard `-110` vig (`52.38%` implied break-even) or live DraftKings/FanDuel prices.
 
 ---
 
 ### 4. Opponent-Conditioned Portfolio Optimization & Player Leverage Index ($LI$)
-* **Bivariate Win-Probability Start/Sit Optimization:** Evaluates every start/sit decision against the opposing manager's exact projected mean and variance ($\mu_{\text{opp}}, \sigma_{\text{opp}}$), reporting both **Projected Point Gain** and **Matchup Win Probability $\Delta\%$**.
+* **Bivariate Win-Probability Start/Sit Optimization:** Evaluates every start/sit decision against the opposing manager's exact projected mean and variance, reporting both **Projected Point Gain** and **Matchup Win Probability Delta**.
 * **Player Leverage Index ($LI$):** Quantifies each starter's impact on the weekly matchup outcome via $LI_i = P(\text{Win} \mid Q_{0.90}) - P(\text{Win} \mid Q_{0.10})$, surfacing the **#1 Matchup Decider** on each roster.
 * **Counterfactual Pareto Trade Engine:** Simulates both managers' 10-starter lineups (`1 QB, 2 RB, 2 WR, 1 TE, 2 FLEX, 1 K, 1 DEF`) before and after candidate `1-for-1` and `2-for-1` trades, recommending only swaps where **both** managers increase their starting lineup PPG and Championship Equity.
 """
@@ -2569,8 +2541,8 @@ init_diff_high, init_diff_low = get_biggest_differers(default_target_week, "ALL"
 ) = analyze_sleeper_league(DEFAULT_LEAGUE_ID, default_target_week)
 
 mgr_choices_init = init_pr_df['Manager'].tolist() if not init_pr_df.empty else []
-def_mgr_a = next((m for m in mgr_choices_init if 'jacob' in m.lower()), mgr_choices_init[0] if mgr_choices_init else None)
-def_mgr_b = next((m for m in mgr_choices_init if m != def_mgr_a), def_mgr_a)
+def_mgr_a = mgr_choices_init[0] if mgr_choices_init else None
+def_mgr_b = mgr_choices_init[1] if len(mgr_choices_init) > 1 else def_mgr_a
 init_pa_list = get_team_skill_players_list(DEFAULT_LEAGUE_ID, default_target_week, def_mgr_a)
 init_pb_list = get_team_skill_players_list(DEFAULT_LEAGUE_ID, default_target_week, def_mgr_b)
 default_comp_players = active_player_names[:3] if len(active_player_names) >= 3 else active_player_names
@@ -2590,7 +2562,6 @@ with gr.Blocks(theme=sleek_theme, css=custom_css, title="NFL Quantitative Scouti
             b_ctrl.click(fn=explain_metric_popup, inputs=b_ctrl, outputs=glossary_popup_md)
 
     with gr.Tabs():
-        # WORKSPACE 1: PLAYER PROJECTIONS, VISUAL PAYOFF TRACKS, BOOMS/BUSTS & DIFFERERS
         with gr.TabItem("1. Player Projections & Scouting"):
             with gr.Tabs():
                 with gr.TabItem("Weekly Projections & Visual Scouting Cards"):
@@ -2650,10 +2621,9 @@ with gr.Blocks(theme=sleek_theme, css=custom_css, title="NFL Quantitative Scouti
                     diff_wk_select.change(fn=get_biggest_differers, inputs=[diff_wk_select, diff_pos_select], outputs=[diff_higher_df, diff_lower_df])
                     diff_pos_select.change(fn=get_biggest_differers, inputs=[diff_wk_select, diff_pos_select], outputs=[diff_higher_df, diff_lower_df])
 
-        # WORKSPACE 2: LEAGUE COMMAND CENTER
         with gr.TabItem("2. League Command Center"):
             with gr.Row():
-                league_id_in = gr.Textbox(value=DEFAULT_LEAGUE_ID, label="Sleeper League ID", placeholder="Paste your Sleeper League ID (e.g. 1389689750515904512)...")
+                league_id_in = gr.Textbox(value="", label="Sleeper League ID", placeholder="Paste your Sleeper League ID (e.g. 1389689750515904512)...")
                 league_wk_in = gr.Dropdown(choices=[str(w) for w in range(1, 19)], value=str(default_target_week), label="Target NFL Week for Lineup & Matchup Audit")
                 league_btn = gr.Button("Sync Real-Time League Data & Poll Live Scores", variant="primary")
             league_summary = gr.Markdown(init_lg_sum)
@@ -2661,7 +2631,7 @@ with gr.Blocks(theme=sleek_theme, css=custom_css, title="NFL Quantitative Scouti
             with gr.Tabs():
                 with gr.TabItem("Power Rankings, Playoff Odds & Manager Audit"):
                     league_pr_table = gr.DataFrame(value=init_pr_df, label="Click Any Manager Row Below to Open Their Full-Season Audit & Starter Payoff Distribution Tracks", interactive=False)
-                    with gr.Column(visible=bool(DEFAULT_LEAGUE_ID and not init_pr_df.empty)) as mgr_deep_dive_group:
+                    with gr.Column(visible=False) as mgr_deep_dive_group:
                         with gr.Row():
                             manager_dropdown = gr.Dropdown(choices=mgr_choices_init, value=def_mgr_a, label="Select Manager to Inspect (Full-Season Starter/Depth Grades + Weekly Audit + Payoff Tracks)")
                         mgr_audit_html = gr.HTML(init_audit_html)
@@ -2735,7 +2705,6 @@ with gr.Blocks(theme=sleek_theme, css=custom_css, title="NFL Quantitative Scouti
             sim_mgr_b.change(fn=update_trade_player_choices, inputs=[league_id_in, league_wk_in, sim_mgr_b], outputs=sim_player_b)
             sim_trade_btn.click(fn=run_custom_trade_sim, inputs=[league_id_in, league_wk_in, sim_mgr_a, sim_player_a, sim_mgr_b, sim_player_b], outputs=sim_trade_out)
 
-        # WORKSPACE 3: MULTI-PLAYER COMPARISON WITH SYNCHRONIZED PAYOFF DISTRIBUTION TRACKS
         with gr.TabItem("3. Multi-Player Comparison (2 to 6 Players)"):
             gr.Markdown("### Multi-Player Side-by-Side Comparison (Synchronized Payoff Distribution Bars, Headshots & 23 Metrics)")
             with gr.Row():
@@ -2757,7 +2726,6 @@ with gr.Blocks(theme=sleek_theme, css=custom_css, title="NFL Quantitative Scouti
             comp_players_sel.change(fn=compare_multiple_players, inputs=[comp_wk, comp_players_sel], outputs=[comp_cards_html, comp_summary_md, comp_table_view])
             comp_wk.change(fn=compare_multiple_players, inputs=[comp_wk, comp_players_sel], outputs=[comp_cards_html, comp_summary_md, comp_table_view])
 
-        # WORKSPACE 4: PLAYER PROPS & SPORTSBOOK EV FINDER (FANDUEL / DRAFTKINGS)
         with gr.TabItem("4. Player Props & Sportsbook +EV Finder"):
             gr.Markdown("### NFL Player Stat Projections & Sportsbook Over/Under Edge Finder (Passing, Rushing, Receiving & TDs)")
             with gr.Row():
@@ -2816,7 +2784,6 @@ with gr.Blocks(theme=sleek_theme, css=custom_css, title="NFL Quantitative Scouti
                 outputs=calc_out_html
             )
 
-        # WORKSPACE 5: MODEL ACCURACY & METHODOLOGY WHITEPAPER
         with gr.TabItem("5. Model Accuracy & Methodology"):
             with gr.Tabs():
                 with gr.TabItem("Empirical Accuracy Backtest vs. Sleeper"):
@@ -2831,7 +2798,5 @@ with gr.Blocks(theme=sleek_theme, css=custom_css, title="NFL Quantitative Scouti
                 with gr.TabItem("Complete Methodology & Whitepaper"):
                     gr.Markdown(methodology_text)
 
-if os.environ.get("PORT"):
-    demo.launch(server_name="0.0.0.0", server_port=int(os.environ.get("PORT", 7860)))
-else:
-    demo.launch(inbrowser=True)
+port = int(os.environ.get("PORT", 7860))
+demo.launch(server_name="0.0.0.0", server_port=port)
