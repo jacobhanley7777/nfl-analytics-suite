@@ -78,7 +78,7 @@ def ensure_engine_initialized():
     if not os.path.exists(CACHE_PATH):
         try:
             rel_url = "https://github.com/jacobhanley7777/nfl-analytics-suite/releases/download/v1.0/model_cache.pkl"
-            r_dl = requests.get(rel_url, timeout=30)
+            r_dl = requests.get(rel_url, timeout=30, allow_redirects=True)
             if r_dl.status_code == 200:
                 with open(CACHE_PATH, "wb") as f_out:
                     f_out.write(r_dl.content)
@@ -167,7 +167,7 @@ def ensure_engine_initialized():
     STATE['gsis_to_bio'] = gsis_to_bio
     gc.collect()
 
-            cache_loaded = False
+    cache_loaded = False
     if os.path.exists(CACHE_PATH):
         try:
             with open(CACHE_PATH, "rb") as f:
@@ -658,7 +658,7 @@ def open_player_card_on_click(table_df, week_num, evt: gr.SelectData):
     dist_bar_html = render_payoff_distribution_bar_html(f"{p['Player']} Payoff Distribution", f"{p['Pos']} - {p['Team']}", float(p['Floor (10%)']), float(p[COL_MODEL]), float(p[COL_SLEEPER]), float(p['Boom (90%)']))
     shap_dict = compute_shapley_group_attribution(p)
     shap_items = "".join([f'<div style="padding:8px; border:1px solid rgba(148,163,184,0.25); border-radius:6px;"><div style="font-size:0.75rem;">{k}</div><div style="font-weight:700; color:{"#475569" if "Baseline" in k else ("#059669" if v >= 0 else "#dc2626")};">{f"{v:.2f} PPR" if "Baseline" in k else f"{v:+.2f} PPR"}</div></div>' for k, v in shap_dict.items()])
-    card_html = f'<div style="padding:16px; border:1px solid rgba(148,163,184,0.35); border-radius:10px; background:rgba(15,23,42,0.03); margin-bottom:12px;"><div style="display:flex; gap:16px; align-items:center; margin-bottom:12px;"><img src="{bio["headshot"]}" style="width:80px; height:80px; border-radius:50%; object-fit:cover; background:#1e293b;" onerror="this.src=\'https://sleepercdn.com/images/v2/icons/player_default.webp\'"/><div><div style="font-size:1.2rem; font-weight:700;">{p["Player"]} — {p["Outlook Verdict"]}</div><div style="font-size:0.85rem; opacity:0.8;">{p["Pos"]} — {p["Team"]} | Age: {bio["age"]} | Exp: {bio["exp"]} | College: {bio["college"]}</div></div></div>{dist_bar_html}<div style="font-weight:700; font-size:0.85rem; margin:8px 0 4px 0;">Feature Attribution Waterfall:</div><div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:8px;">{shap_items}</div></div>'
+    card_html = f'<div style="padding:16px; border:1px solid rgba(148,163,184,0.35); border-radius:10px; background:rgba(15,23,42,0.03); margin-bottom:12px;"><div style="display:flex; gap:16px; align-items:center; margin-bottom:12px;"><img src="{bio["headshot"]}" style="width:80px; height:80px; border-radius:50%; object-fit:cover; background:#1e293b;" onerror="this.src='https://sleepercdn.com/images/v2/icons/player_default.webp'"/><div><div style="font-size:1.2rem; font-weight:700;">{p["Player"]} — {p["Outlook Verdict"]}</div><div style="font-size:0.85rem; opacity:0.8;">{p["Pos"]} — {p["Team"]} | Age: {bio["age"]} | Exp: {bio["exp"]} | College: {bio["college"]}</div></div></div>{dist_bar_html}<div style="font-weight:700; font-size:0.85rem; margin:8px 0 4px 0;">Feature Attribution Waterfall:</div><div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:8px;">{shap_items}</div></div>'
     logs = STATE['df_2026'][STATE['df_2026']['player_id'].astype(str) == str(p['player_id'])].sort_values('week', ascending=False)
     logs_clean = logs[['week', STATE['opp_col'], 'fantasy_points_ppr', 'xFP_volume', 'calc_wopr', 'calc_racr', 'total_epa', 'targets', 'receptions', 'receiving_yards', 'carries', 'rushing_yards']].copy()
     for c in ['fantasy_points_ppr', 'xFP_volume', 'calc_wopr', 'calc_racr', 'total_epa']: logs_clean[c] = logs_clean[c].round(2)
@@ -829,7 +829,6 @@ def initialize_dashboard():
         gr.update(value=str(wk)), gr.update(choices=p_names, value=p_names[0] if p_names else None), cust_html, top_p, all_p,
         gr.update(choices=eval_choices, value=eval_choices[0]), acc_md, acc_df
     )
-
 
 with gr.Blocks(theme="soft", title="NFL Quantitative Scouting, League & Props Suite") as demo:
     gr.Markdown("# NFL Quantitative Scouting, League Intelligence & Player Props Suite (2026)")
