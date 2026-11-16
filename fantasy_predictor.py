@@ -168,28 +168,30 @@ def ensure_engine_initialized():
     gc.collect()
 
     cache_loaded = False
-    if os.path.exists(CACHE_PATH):
-        try:
-            with open(CACHE_PATH, "rb") as f:
-                cb = pickle.load(f)
-            if cb.get('version') == 'v9_props':
-                STATE['df'] = cb['df']
-                STATE['latest_dvp'] = cb['latest_dvp']
-                STATE['model_mean'] = cb['model_mean']
-                STATE['model_median'] = cb['model_median']
-                STATE['model_mae'] = cb['model_mae']
-                STATE['model_floor'] = cb['model_floor']
-                STATE['model_boom'] = cb['model_boom']
-                STATE['prop_models'] = cb['prop_models']
-                STATE['pos_baselines'] = cb['pos_baselines']
-                STATE['name_col'] = cb['name_col']
-                STATE['team_col'] = cb['team_col']
-                STATE['opp_col'] = cb['opp_col']
-                cache_loaded = True
-                del cb
-                gc.collect()
-        except Exception:
-            cache_loaded = False
+ if os.path.exists(CACHE_PATH):
+     try:
+         with open(CACHE_PATH, "rb") as f:
+             cb = pickle.load(f)
+         if isinstance(cb, dict) and 'df' in cb:
+             STATE['df'] = cb['df']
+             STATE['latest_dvp'] = cb.get('latest_dvp', {})
+             STATE['model_mean'] = cb.get('model_mean')
+             STATE['model_median'] = cb.get('model_median')
+             STATE['model_mae'] = cb.get('model_mae')
+             STATE['model_floor'] = cb.get('model_floor')
+             STATE['model_boom'] = cb.get('model_boom')
+             STATE['prop_models'] = cb.get('prop_models', {})
+             STATE['pos_baselines'] = cb.get('pos_baselines', {})
+             STATE['name_col'] = cb.get('name_col', 'player_display_name')
+             STATE['team_col'] = cb.get('team_col', 'team')
+             STATE['opp_col'] = cb.get('opp_col', 'opponent_team')
+             cache_loaded = True
+             print("Pre-trained model cache loaded successfully!")
+             del cb
+             gc.collect()
+     except Exception as e:
+         print(f"Cache load error: {e}")
+         cache_loaded = False
 
     if not cache_loaded:
         dfs = []
